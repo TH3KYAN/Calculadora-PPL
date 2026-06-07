@@ -1,0 +1,86 @@
+// Asumiendo que recibes el objeto 'problemaFinal' de la interfaz dinámica:
+// problemaFinal = { funcionObjetivo: [3, 2], restricciones: [ {coeficientes: [2, 1], signo: '>=', rhs: 18}, ... ] }
+
+function estandarizarParaDosFases(problemaFinal) {
+    const numVars = problemaFinal.funcionObjetivo.length;
+    const restricciones = problemaFinal.restricciones;
+    
+    let numHolguras = 0;
+    let numExcesos = 0;
+    let numArtificiales = 0;
+
+    // 1. Contar qué variables extra necesitamos según los signos
+    restricciones.forEach(res => {
+        if (res.signo === '<=') {
+            numHolguras++;
+        } else if (res.signo === '>=') {
+            numExcesos++;
+            numArtificiales++; // >= requiere Exceso y Artificial
+        } else if (res.signo === '=') {
+            numArtificiales++; // = requiere solo Artificial
+        }
+    });
+
+    const totalColumnasExtra = numHolguras + numExcesos + numArtificiales;
+    let matriz = [];
+    let variablesArtificialesIndices = []; // Para saber qué columnas neutralizar en la Fase 2
+
+    let idxHolgura = 0;
+    let idxExcesoYArtificial = 0;
+
+    // 2. Construir las filas de las restricciones
+    restricciones.forEach((res, i) => {
+        let fila = [...res.coeficientes]; // Copiamos coeficientes de X1, X2, etc.
+        
+        // Rellenar con ceros el espacio de las variables extra
+        let variablesExtra = new Array(totalColumnasExtra).fill(0);
+
+        if (res.signo === '<=') {
+            // Poner un +1 en la posición de su variable de holgura
+            variablesExtra[idxHolgura] = 1;
+            idxHolgura++;
+        } 
+        else if (res.signo === '>=') {
+            // -1 para Exceso y +1 para Artificial
+            let posExceso = numHolguras + idxExcesoYArtificial;
+            let posArtificial = numHolguras + numExcesos + idxExcesoYArtificial;
+            
+            variablesExtra[posExceso] = -1;
+            variablesExtra[posArtificial] = 1;
+            
+            variablesArtificialesIndices.push(numVars + posArtificial);
+            idxExcesoYArtificial++;
+        } 
+        else if (res.signo === '=') {
+            // +1 para Artificial
+            let posArtificial = numHolguras + numExcesos + idxExcesoYArtificial;
+            
+            variablesExtra[posArtificial] = 1;
+            variablesArtificialesIndices.push(numVars + posArtificial);
+            idxExcesoYArtificial++;
+        }
+
+        fila = fila.concat(variablesExtra);
+        fila.push(res.rhs); // Añadir RHS (término independiente) al final de la fila
+        matriz.push(fila);
+    });
+
+    // 3. Añadir fila de la función objetivo Z (llena de ceros en las variables extra)
+    let filaZ = problemaFinal.funcionObjetivo.map(c => c * -1); // Si es Max, se invierten los signos
+    let cerosZ = new Array(totalColumnasExtra + 1).fill(0); // +1 por la columna de solución (RHS)
+    matriz.push(filaZ.concat(cerosZ));
+
+    return {
+        matrizInicial: matriz,
+        indicesArtificiales: variablesArtificialesIndices,
+        necesitaDosFases: numArtificiales > 0
+    };
+}
+
+// Ejemplo de cómo se conectaría:
+// let preparacion = estandarizarParaDosFases(problemaFinal);
+// if (preparacion.necesitaDosFases) {
+//     iniciarFase1(preparacion.matrizInicial, preparacion.indicesArtificiales);
+// } else {
+//     iniciarSimplexEstandar(preparacion.matrizInicial);
+// }

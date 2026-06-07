@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Calculadora Gráfica PL - Dinámica</title>
+    <style>
+        :root { --primary: #2563eb; --danger: #ef4444; --bg: #f8fafc; --border: #cbd5e1; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 2rem; color: #0f172a; max-width: 900px; margin: 0 auto; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); margin-bottom: 2rem; }
+        .equation-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; }
+        input[type="number"], select { padding: 0.4rem; border: 1px solid var(--border); border-radius: 6px; text-align: center; width: 70px; }
+        button { border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; }
+        .btn-add { background: var(--primary); }
+        .btn-delete { background: var(--danger); }
+        .btn-solve { background: #10b981; width: 100%; padding: 1rem; margin-top: 1rem; font-size: 1.1rem; }
+        canvas { border: 1px solid var(--border); background: #f1f5f9; width: 100%; max-width: 600px; display: block; margin: 1rem auto; }
+        #resultados { text-align: center; font-size: 1.2rem; font-weight: bold; color: #10b981; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Función Objetivo (Maximizar)</h2>
+        <div class="equation-row">
+            <strong>Z = </strong>
+            <input type="number" id="z1" value="3"> X<sub>1</sub> + 
+            <input type="number" id="z2" value="2"> X<sub>2</sub>
+        </div>
+
+        <h2 style="display: flex; justify-content: space-between;">
+            Restricciones
+            <button class="btn-add" onclick="agregarRestriccion()">+ Añadir Restricción</button>
+        </h2>
+        <div id="restricciones-container"></div>
+        
+        <button class="btn-solve" onclick="resolverGraficoDinamico()">Graficar y Resolver</button>
+        <div id="resultados"></div>
+        <canvas id="plano" width="600" height="400"></canvas>
+    </div>
+
+    <script>
+        let counter = 0;
+        window.onload = () => { agregarRestriccion(); agregarRestriccion(); };
+
+        function agregarRestriccion() {
+            counter++;
+            const row = document.createElement('div');
+            row.className = 'equation-row res-row';
+            row.id = `res-${counter}`;
+            row.innerHTML = `
+                <input type="number" class="r1" value="1"> X<sub>1</sub> + 
+                <input type="number" class="r2" value="1"> X<sub>2</sub>
+                <select class="signo">
+                    <option value="<=">&le;</option>
+                    <option value=">=">&ge;</option>
+                    <option value="=">=</option>
+                </select>
+                <input type="number" class="rhs" value="10">
+                <button class="btn-delete" onclick="document.getElementById('${row.id}').remove()">X</button>
+            `;
+            document.getElementById('restricciones-container').appendChild(row);
+        }
+
+        function resolverGraficoDinamico() {
+            const z1 = parseFloat(document.getElementById('z1').value);
+            const z2 = parseFloat(document.getElementById('z2').value);
+            const filas = document.querySelectorAll('.res-row');
+            let restricciones = [];
+
+            // 1. Recolectar datos de la UI
+            filas.forEach(fila => {
+                restricciones.push({
+                    a: parseFloat(fila.querySelector('.r1').value),
+                    b: parseFloat(fila.querySelector('.r2').value),
+                    signo: fila.querySelector('.signo').value,
+                    c: parseFloat(fila.querySelector('.rhs').value)
+                });
+            });
+
+            // Ejes implícitos (X1 >= 0, X2 >= 0)
+            let lineasParaInterseccion = [...restricciones, {a:1, b:0, c:0}, {a:0, b:1, c:0}];
+            let puntos = [];
+
+            // 2. Calcular intersecciones asumiendo todo como "="
+            for (let i = 0; i < lineasParaInterseccion.length; i++) {
+                for (let j = i + 1; j < lineasParaInterseccion.length; j++) {
+                    const rI = lineasParaInterseccion[i];
+                    const rJ = lineasParaInterseccion[j];
+                    const det = rI.a * rJ.b - rJ.a * rI.b;
+                    if (det !== 0) {
+                        const x = (rI.c * rJ.b - rJ.c * rI.b) / det;
+                        const y = (rI.a * rJ.c - rJ.a * rI.c) / det;
+                        if (!isNaN(x) && !isNaN(y)) puntos.push({ x: Math.round(x*1000)/1000, y: Math.round(y*1000)/1000 });
+                    }
+                }
+            }
+
+            // 3. Filtrar puntos evaluando el SIGNO real de cada restricción
+            let regionFactible = puntos.filter(p => {
+                if (p.x < -0.001 || p.y < -0.001) return false;
+                for (let r of restricciones) {
+                    let valor = r.a * p.x + r.b * p.y;
+                    if (r.signo === '<=' && valor > r.c + 0.001) return false;
+                    if (r.signo === '>=' && valor < r.c - 0.001) return false;
+                    if (r.signo === '=' && Math.abs(valor - r.c) > 0.001) return false;
+                }
+                return true;
+            });
+
+            // 4. Optimizar y dibujar
+            let maxZ = -Infinity;
+            let optimo = null;
+            regionFactible.forEach(p => {
+                p.z = (z1 * p.x) + (z2 * p.y);
+                if (p.z > maxZ) { maxZ = p.z; optimo = p; }
+            });
+
+            if(optimo) {
+                document.getElementById('resultados').innerText = `Solución Óptima: X1 = ${optimo.x}, X2 = ${optimo.y} | Z = ${optimo.z}`;
+                dibujar(regionFactible, optimo);
+            } else {
+                document.getElementById('resultados').innerText = `No hay solución factible (la región está vacía).`;
+                dibujar([], null);
+            }
+        }
+
+        // Función de dibujado simplificada
+        function dibujar(vertices, optimo) {
+            const canvas = document.getElementById('plano');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if(vertices.length === 0) return;
+
+            let maxC = Math.max(...vertices.map(v => Math.max(v.x, v.y))) * 1.5 || 10;
+            const sX = canvas.width / maxC, sY = canvas.height / maxC;
+            const pX = x => x * sX, pY = y => canvas.height - (y * sY);
+
+            // Polígono
+            const cX = vertices.reduce((s, p) => s + p.x, 0) / vertices.length;
+            const cY = vertices.reduce((s, p) => s + p.y, 0) / vertices.length;
+            vertices.sort((a, b) => Math.atan2(a.y - cY, a.x - cX) - Math.atan2(b.y - cY, b.x - cX));
+
+            ctx.fillStyle = 'rgba(37, 99, 235, 0.3)'; ctx.beginPath();
+            ctx.moveTo(pX(vertices[0].x), pY(vertices[0].y));
+            vertices.forEach(v => ctx.lineTo(pX(v.x), pY(v.y)));
+            ctx.fill();
+
+            // Ejes y Punto óptimo
+            ctx.strokeStyle = '#000'; ctx.beginPath();
+            ctx.moveTo(0, canvas.height); ctx.lineTo(canvas.width, canvas.height);
+            ctx.moveTo(0, canvas.height); ctx.lineTo(0, 0); ctx.stroke();
+
+            if(optimo) {
+                ctx.fillStyle = '#10b981'; ctx.beginPath();
+                ctx.arc(pX(optimo.x), pY(optimo.y), 6, 0, Math.PI*2); ctx.fill();
+            }
+        }
+    </script>
+</body>
+</html>

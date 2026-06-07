@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Simplex Estándar - Motor Dinámico</title>
+    <style>
+        :root { --primary: #2563eb; --danger: #ef4444; --success: #10b981; --bg: #f8fafc; --border: #cbd5e1; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 2rem; color: #0f172a; max-width: 950px; margin: 0 auto; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); margin-bottom: 2rem; }
+        .controls { display: flex; gap: 1rem; margin-bottom: 2rem; background: #f1f5f9; padding: 1rem; border-radius: 8px; flex-wrap: wrap; }
+        .control-group { display: flex; align-items: center; gap: 0.5rem; }
+        .equation-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; padding: 0.5rem; border-radius: 6px; }
+        input[type="number"] { padding: 0.5rem; border: 1px solid var(--border); border-radius: 6px; text-align: center; width: 70px; font-family: monospace; }
+        button { border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        .btn-blue { background: var(--primary); }
+        .btn-red { background: var(--danger); padding: 0.4rem 0.6rem; }
+        .btn-green { background: var(--success); width: 100%; padding: 1rem; font-size: 1.1rem; margin-top: 1rem; }
+        .section-title { color: var(--primary); border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-top: 2rem; }
+        table { border-collapse: collapse; width: 100%; margin-top: 1rem; text-align: center; font-family: monospace; }
+        th, td { border: 1px solid var(--border); padding: 0.5rem; }
+        th { background-color: #f1f5f9; }
+        .step-container { margin-top: 1rem; overflow-x: auto; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Método Simplex Estándar (Maximización)</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <strong>Variables (X):</strong>
+                <button class="btn-red" onclick="modificarVariables(-1)">-</button>
+                <span id="display-vars" style="font-weight: bold; font-size: 1.2rem; width: 20px; text-align: center;">2</span>
+                <button class="btn-blue" onclick="modificarVariables(1)">+</button>
+            </div>
+            <div class="control-group" style="margin-left: 2rem;">
+                <button class="btn-blue" onclick="agregarRestriccion()">+ Añadir Restricción</button>
+            </div>
+        </div>
+
+        <h2 class="section-title">1. Función Objetivo (Max Z)</h2>
+        <div id="contenedor-z" class="equation-row"></div>
+
+        <h2 class="section-title">2. Restricciones (≤)</h2>
+        <div id="contenedor-restricciones"></div>
+        
+        <button class="btn-green" onclick="ejecutarSimplex()">Resolver</button>
+    </div>
+
+    <div class="card" id="resultados-card" style="display: none;">
+        <h2>Desarrollo</h2>
+        <div id="tablas-container"></div>
+    </div>
+
+    <script>
+        let estado = {
+            numVars: 2,
+            funcionObjetivo: [0, 0],
+            restricciones: [ { coefs: [0, 0], rhs: 0 }, { coefs: [0, 0], rhs: 0 } ]
+        };
+
+        function modificarVariables(cambio) {
+            const nuevoNum = estado.numVars + cambio;
+            if (nuevoNum < 2 || nuevoNum > 10) return;
+            estado.numVars = nuevoNum;
+            document.getElementById('display-vars').innerText = estado.numVars;
+
+            if (cambio > 0) {
+                estado.funcionObjetivo.push(0);
+                estado.restricciones.forEach(r => r.coefs.push(0));
+            } else {
+                estado.funcionObjetivo.pop();
+                estado.restricciones.forEach(r => r.coefs.pop());
+            }
+            renderizarUI();
+        }
+
+        function agregarRestriccion() {
+            estado.restricciones.push({ coefs: new Array(estado.numVars).fill(0), rhs: 0 });
+            renderizarUI();
+        }
+
+        function eliminarRestriccion(index) {
+            if (estado.restricciones.length <= 1) return;
+            estado.restricciones.splice(index, 1);
+            renderizarUI();
+        }
+
+        function actualizarValor(tipo, filaIdx, colIdx, valor) {
+            let num = parseFloat(valor) || 0;
+            if (tipo === 'Z') estado.funcionObjetivo[colIdx] = num;
+            else if (tipo === 'COEF') estado.restricciones[filaIdx].coefs[colIdx] = num;
+            else if (tipo === 'RHS') estado.restricciones[filaIdx].rhs = num;
+        }
+
+        function renderizarUI() {
+            let htmlZ = '<strong>Z = </strong>';
+            for (let i = 0; i < estado.numVars; i++) {
+                htmlZ += `<input type="number" step="any" value="${estado.funcionObjetivo[i]}" oninput="actualizarValor('Z', null, ${i}, this.value)"> X<sub>${i+1}</sub>`;
+                if (i < estado.numVars - 1) htmlZ += ` + `;
+            }
+            document.getElementById('contenedor-z').innerHTML = htmlZ;
+
+            let htmlRes = '';
+            estado.restricciones.forEach((res, filaIdx) => {
+                htmlRes += `<div class="equation-row">`;
+                for (let j = 0; j < estado.numVars; j++) {
+                    htmlRes += `<input type="number" step="any" value="${res.coefs[j]}" oninput="actualizarValor('COEF', ${filaIdx}, ${j}, this.value)"> X<sub>${j+1}</sub>`;
+                    if (j < estado.numVars - 1) htmlRes += ` + `;
+                }
+                htmlRes += `<strong>&le;</strong> <input type="number" step="any" value="${res.rhs}" oninput="actualizarValor('RHS', ${filaIdx}, null, this.value)">
+                    <button class="btn-red" onclick="eliminarRestriccion(${filaIdx})">X</button>
+                </div>`;
+            });
+            document.getElementById('contenedor-restricciones').innerHTML = htmlRes;
+        }
+
+        function ejecutarSimplex() {
+            document.getElementById('resultados-card').style.display = 'block';
+            const cont = document.getElementById('tablas-container');
+            cont.innerHTML = '';
+            
+            const numRes = estado.restricciones.length;
+            let matriz = [];
+
+            // Estandarizar
+            for (let i = 0; i < numRes; i++) {
+                let fila = [...estado.restricciones[i].coefs];
+                let holguras = new Array(numRes).fill(0);
+                holguras[i] = 1;
+                matriz.push(fila.concat(holguras, [estado.restricciones[i].rhs]));
+            }
+            let filaZ = estado.funcionObjetivo.map(v => v * -1);
+            matriz.push(filaZ.concat(new Array(numRes + 1).fill(0)));
+
+            // Lógica iterativa
+            let iter = 0;
+            while(true) {
+                iter++;
+                let cV = matriz[matriz.length - 1].slice(0, -1);
+                let minZ = Math.min(...cV);
+                
+                if (minZ >= -1e-7 || iter > 20) break;
+                
+                let colPiv = cV.indexOf(minZ);
+                let minCociente = Infinity, filaPiv = -1;
+                
+                for(let i = 0; i < numRes; i++) {
+                    let val = matriz[i][colPiv];
+                    if (val > 1e-7) {
+                        let cociente = matriz[i][matriz[i].length - 1] / val;
+                        if (cociente < minCociente) { minCociente = cociente; filaPiv = i; }
+                    }
+                }
+
+                if (filaPiv === -1) { cont.innerHTML += `<p class="danger">Solución ilimitada.</p>`; return; }
+
+                let pivote = matriz[filaPiv][colPiv];
+                for (let j = 0; j < matriz[filaPiv].length; j++) matriz[filaPiv][j] /= pivote;
+                for (let i = 0; i < matriz.length; i++) {
+                    if (i !== filaPiv) {
+                        let factor = matriz[i][colPiv];
+                        for (let j = 0; j < matriz[i].length; j++) matriz[i][j] -= factor * matriz[filaPiv][j];
+                    }
+                }
+            }
+
+            cont.innerHTML += `<div class="step-container">
+                <h3 style="color: #10b981;">Z Óptimo = ${matriz[matriz.length-1][matriz[0].length-1].toFixed(4)}</h3>
+            </div>`;
+        }
+
+        window.onload = renderizarUI;
+    </script>
+</body>
+</html>
