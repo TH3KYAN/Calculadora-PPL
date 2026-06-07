@@ -1,3 +1,0 @@
-numpy
-matplotlib
-# Tkinter is included with standard Python distributions on most platforms
